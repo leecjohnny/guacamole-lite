@@ -520,8 +520,9 @@ The opt-in live test builds VNC-enabled guacd 1.6.0 locally in a Debian Trixie D
 container from the checksum-verified Apache source archive. It creates an amd64
 tar bundle with the installed files and an install script. The runner uploads
 that bundle to Cloudflare's managed `cloudflare/debian-trixie` VM through the
-Worker. The VM runs the bundled install script to install runtime dependencies,
-TigerVNC and guacd; it does not compile guacd. Docker is required for the build.
+Worker. The `standard-4` VM runs the bundled install script to install runtime
+dependencies, TigerVNC and guacd; it does not compile guacd. Docker is required
+for the build.
 
 In `test/cloudflare/live`, run `npm install` and
 `bunx cf deploy --secrets-file /absolute/path/to/secrets.json`. That file must

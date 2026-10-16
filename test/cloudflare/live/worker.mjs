@@ -19,8 +19,10 @@ export class Desktop extends DurableObject {
     }
 
     async command(argv, stdin) {
+        console.log('Starting:', argv.join(' '));
         const process = await this.ctx.container.exec(argv, { stdin, stderr: 'combined' });
         const result = await process.output();
+        console.log('Finished:', argv[0], 'exit', result.exitCode);
         if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stdout));
         return new TextDecoder().decode(result.stdout);
     }
@@ -29,7 +31,7 @@ export class Desktop extends DurableObject {
         const path = new URL(request.url).pathname;
         if (path === '/setup' && request.method === 'POST') {
             this.ctx.container.start({
-                image: 'cloudflare/debian-trixie', entrypoint: ['sleep', 'infinity'], enableInternet: true,
+                image: 'cloudflare/debian-trixie', instance: 'standard-4', entrypoint: ['sleep', 'infinity'], enableInternet: true,
             });
             await this.ctx.container.setInactivityTimeout(15 * 60 * 1000);
             await this.command(['mkdir', '-p', '/opt/guacamole']);
