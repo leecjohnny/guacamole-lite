@@ -24,7 +24,9 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",
+    "esbuild": "0.28.2",
     "jest": "^29.7.0",
+    "miniflare": "4.20260730.0",
     "ts-jest": "^29.1.1"
   },
   "engines": {
@@ -40,6 +42,8 @@
   "license": "Apache-2.0",
   "scripts": {
     "test": "jest",
-    "update-vendors": "node scripts/update-vendors.js"
+    "update-vendors": "node scripts/update-vendors.js",
+    "test:node": "jest --testPathIgnorePatterns=test/Cloudflare.test.js",
+    "test:cloudflare": "jest --runInBand test/Cloudflare.test.js"
   }
 }
