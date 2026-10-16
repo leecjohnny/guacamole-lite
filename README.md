@@ -443,3 +443,99 @@ distribution.
 
 For more details about the Apache-2.0 license and your rights under it, please see
 the [LICENSE](https://github.com/vadimpronin/guacamole-lite/blob/master/LICENSE) file included in the repository.
+
+
+## Cloudflare Durable Objects
+
+`guacamole-lite/cloudflare.mjs` adapts the existing server to a Durable Object.
+It replaces only the listening WebSocket server and Node process signal hooks.
+The existing token validation, settings, callbacks, dynamic guacd routing, session
+registry, protocol parser, handshake and inactivity timers run unchanged under
+Cloudflare's `nodejs_compat` flag. `node:net` opens the outbound TCP connection to
+guacd. The application must provide a guacd address reachable from Workers.
+
+The adapter uses standard WebSockets. Active sessions keep the object awake;
+this adapter does not use hibernation or persist connections. A runtime restart
+or deployment closes the session, and the browser must reconnect. The normal
+Node.js entry point and server behavior remain available.
+
+```js
+import { DurableObject } from 'cloudflare:workers';
+import { GuacamoleAdapter } from 'guacamole-lite/cloudflare.mjs';
+
+export class Desktop extends DurableObject {
+    constructor(ctx, env) {
+        super(ctx, env);
+        this.guacamole = new GuacamoleAdapter(
+            { host: env.GUACD_HOST, port: 4822 },
+            { crypt: { key: env.GUACAMOLE_KEY } },
+        );
+    }
+
+    fetch(request) { return this.guacamole.fetch(request); }
+}
+```
+
+The first three constructor arguments are the Node server's `guacdOptions`,
+`clientOptions`, and `callbacks`. The adapter also exposes the existing `open`,
+`close`, and `error` events and `close()` method. Route upgrade requests to the
+object after authenticating the caller. Browsers use the same `token` query
+parameter and `guacamole` WebSocket subprotocol as the Node server. Route an
+owner and its joined clients to the same object when using the default in-memory
+session registry; supply `callbacks.sessionRegistry` to share routing across
+objects.
+
+The optional fourth argument is a socket factory `(port, host) => socket`.
+It defaults to `net.connect`. For a Cloudflare Container's private TCP port, use
+the native stream adapter:
+
+```js
+import { Duplex } from 'node:stream';
+
+const connectSocket = port => {
+    const socket = ctx.container.getTcpPort(port).connect(`127.0.0.1:${port}`);
+    const stream = Duplex.fromWeb(socket);
+    socket.opened.then(() => stream.emit('connect'), error => stream.destroy(error));
+    return stream;
+};
+// Pass connectSocket as the fourth GuacamoleAdapter argument.
+```
+
+[examples/cloudflare](examples/cloudflare) contains a deployable Worker. Run
+`npm install` at the repository root and in that directory. Set `GUACD_HOST` in
+`cloudflare.config.ts`, supply a 32-byte `GUACAMOLE_KEY` in a private JSON file,
+and run `bunx cf deploy --secrets-file /absolute/path/to/secrets.json` from the
+example directory. Do not commit that secrets file.
+
+### Tests
+
+Run `npm test -- --runInBand` with Node.js 22 or newer to run the original Jest
+suite and the Workers-runtime tests. `npm run test:cloudflare` runs only the
+local adapter tests in Miniflare/workerd, with no Cloudflare credentials or
+deployment required. `npm run test:node` runs the original suite on older Node
+versions. The adapter tests reuse `MockGuacdServer` and cover the real
+WebSocket/TCP path, binary input, tokens, dynamic routing, joins and cleanup.
+
+The opt-in live test builds VNC-enabled guacd 1.6.0 locally in a Debian Trixie Docker
+container from the checksum-verified Apache source archive. It creates an amd64
+tar bundle with the installed files and an install script. The runner uploads
+that bundle to Cloudflare's managed `cloudflare/debian-trixie` VM through the
+Worker. The `standard-4` VM runs the bundled install script to install runtime
+dependencies, TigerVNC and guacd; it does not compile guacd. Docker is required
+for the build.
+
+In `test/cloudflare/live`, run `npm install` and
+`bunx cf deploy --secrets-file /absolute/path/to/secrets.json`. That file must
+contain `TEST_SECRET` (a random bearer credential) and `GUACAMOLE_KEY` (32 bytes).
+Then run, from the repository root:
+
+```sh
+./test/cloudflare/live/build-guacd.sh "$HOME/.cache/guacamole-lite"
+node test/cloudflare/live/run.cjs https://YOUR-WORKER.workers.dev /absolute/path/to/secrets.json \
+    "$HOME/.cache/guacamole-lite/guacd-1.6.0-debian-trixie-amd64.tar.gz"
+```
+
+The test checks a real VNC handshake, main-display dimensions, a background
+colour change, text and binary client messages, and disconnect. It destroys its
+container when it finishes. The Worker remains deployed until you delete it.
+This fixture has authenticated setup and shutdown routes and is for testing only.

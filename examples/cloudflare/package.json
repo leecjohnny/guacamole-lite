@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "bunx cf deploy"
+  },
+  "devDependencies": {
+    "cf": "1.0.0-beta.17",
+    "wrangler": "4.151.0"
+  }
+}
