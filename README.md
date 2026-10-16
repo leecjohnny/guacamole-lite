@@ -516,18 +516,25 @@ deployment required. `npm run test:node` runs the original suite on older Node
 versions. The adapter tests reuse `MockGuacdServer` and cover the real
 WebSocket/TCP path, binary input, tokens, dynamic routing, joins and cleanup.
 
-The opt-in live test uses Cloudflare's managed `cloudflare/debian-trixie` image
-to install TigerVNC and build guacd 1.6.0 from the checksum-verified Apache
-source archive. In `test/cloudflare/live`, run `npm install` and
+The opt-in live test builds VNC-enabled guacd 1.6.0 locally in a Debian Trixie Docker
+container from the checksum-verified Apache source archive. It creates an amd64
+tar bundle with the installed files and an install script. The runner uploads
+that bundle to Cloudflare's managed `cloudflare/debian-trixie` VM through the
+Worker. The VM runs the bundled install script to install runtime dependencies,
+TigerVNC and guacd; it does not compile guacd. Docker is required for the build.
+
+In `test/cloudflare/live`, run `npm install` and
 `bunx cf deploy --secrets-file /absolute/path/to/secrets.json`. That file must
 contain `TEST_SECRET` (a random bearer credential) and `GUACAMOLE_KEY` (32 bytes).
 Then run, from the repository root:
 
 ```sh
-node test/cloudflare/live/run.cjs https://YOUR-WORKER.workers.dev /absolute/path/to/secrets.json
+./test/cloudflare/live/build-guacd.sh "$HOME/.cache/guacamole-lite"
+node test/cloudflare/live/run.cjs https://YOUR-WORKER.workers.dev /absolute/path/to/secrets.json \
+    "$HOME/.cache/guacamole-lite/guacd-1.6.0-debian-trixie-amd64.tar.gz"
 ```
 
 The test checks a real VNC handshake, main-display dimensions, a background
-colour change, text and binary client messages, and disconnect. It destroys its container when it finishes. The
-Worker remains deployed until you delete it. This fixture has authenticated
-setup and shutdown routes and is for testing only.
+colour change, text and binary client messages, and disconnect. It destroys its
+container when it finishes. The Worker remains deployed until you delete it.
+This fixture has authenticated setup and shutdown routes and is for testing only.

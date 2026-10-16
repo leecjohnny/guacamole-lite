@@ -1,18 +1,20 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { once } = require('node:events');
+const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
 const Crypt = require('../../../lib/Crypt');
 const Parser = require('../../../lib/vendor/GuacamoleParser');
 
-// Explicit live test: node run.cjs <Worker URL> <private secrets JSON file>
+// Explicit live test: node run.cjs <Worker URL> <private secrets JSON file> <guacd bundle>
 async function main() {
-    const [base, secretsFile] = process.argv.slice(2);
-    assert(base && secretsFile, 'Usage: node run.cjs <Worker URL> <secrets JSON file>');
+    const [base, secretsFile, bundleFile] = process.argv.slice(2);
+    assert(base && secretsFile && bundleFile, 'Usage: node run.cjs <Worker URL> <secrets JSON file> <guacd bundle>');
+    const bundle = readFileSync(bundleFile);
     const secrets = JSON.parse(readFileSync(secretsFile, 'utf8'));
-    const headers = { Authorization: `Bearer ${secrets.TEST_SECRET}` };
-    const post = async path => {
-        const response = await fetch(new URL(path, base), { method: 'POST', headers, signal: path === '/stop' ? AbortSignal.timeout(15000) : controller.signal });
+    const headers = { Authorization: `Bearer ${secrets.TEST_SECRET}`, 'X-Test-Session': randomUUID() };
+    const post = async (path, body) => {
+        const response = await fetch(new URL(path, base), { method: 'POST', headers, body, signal: path === '/stop' ? AbortSignal.timeout(15000) : controller.signal });
         const text = await response.text();
         assert.equal(response.status, 200, text);
         return text;
@@ -25,8 +27,8 @@ async function main() {
     }, 600000);
     try {
         assert.equal((await fetch(base)).status, 401);
-        console.log('Installing and starting guacd and TigerVNC in managed Debian...');
-        const setup = await post('/setup');
+        console.log('Uploading the local guacd bundle and installing it with TigerVNC in managed Debian...');
+        const setup = await post('/setup', bundle);
         console.log(setup.split('\n').filter(line => /Guacamole proxy|TigerVNC|Xvnc version/i.test(line)).join('\n'));
         const token = new Crypt('AES-256-CBC', secrets.GUACAMOLE_KEY).encrypt({
             connection: { type: 'vnc', settings: { hostname: '127.0.0.1', port: '5901' } },

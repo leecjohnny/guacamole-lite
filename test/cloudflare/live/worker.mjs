@@ -18,8 +18,8 @@ export class Desktop extends DurableObject {
         );
     }
 
-    async command(argv) {
-        const process = await this.ctx.container.exec(argv, { stderr: 'combined' });
+    async command(argv, stdin) {
+        const process = await this.ctx.container.exec(argv, { stdin, stderr: 'combined' });
         const result = await process.output();
         if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stdout));
         return new TextDecoder().decode(result.stdout);
@@ -29,27 +29,12 @@ export class Desktop extends DurableObject {
         const path = new URL(request.url).pathname;
         if (path === '/setup' && request.method === 'POST') {
             this.ctx.container.start({
-                image: 'cloudflare/debian-trixie', instance: 'standard-1', entrypoint: ['sleep', 'infinity'], enableInternet: true,
+                image: 'cloudflare/debian-trixie', entrypoint: ['sleep', 'infinity'], enableInternet: true,
             });
             await this.ctx.container.setInactivityTimeout(15 * 60 * 1000);
-            await this.command(['sh', '-ec', `
-                apt-get update -qq
-                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                    build-essential pkg-config uuid-dev libcairo2-dev libjpeg62-turbo-dev libpng-dev \
-                    libvncserver-dev libssl-dev libtool-bin curl ca-certificates \
-                    tigervnc-standalone-server x11-xserver-utils
-                mkdir -p /opt/guacamole
-                cd /opt/guacamole
-                curl -fsSLO https://downloads.apache.org/guacamole/1.6.0/source/guacamole-server-1.6.0.tar.gz
-                curl -fsSLO https://downloads.apache.org/guacamole/1.6.0/source/guacamole-server-1.6.0.tar.gz.sha256
-                sha256sum -c guacamole-server-1.6.0.tar.gz.sha256
-                tar -xzf guacamole-server-1.6.0.tar.gz
-                cd guacamole-server-1.6.0
-                ./configure --disable-guacenc --disable-guaclog
-                make -j2
-                make install
-                ldconfig
-            `]);
+            await this.command(['mkdir', '-p', '/opt/guacamole']);
+            await this.command(['tar', '-xzf', '-', '-C', '/opt/guacamole'], request.body);
+            await this.command(['sh', '/opt/guacamole/install.sh']);
             await this.ctx.container.exec(
                 ['Xtigervnc', ':1', '-geometry', '800x600', '-depth', '24', '-SecurityTypes', 'None', '-localhost', 'yes'],
                 { stdout: 'ignore', stderr: 'ignore' },
@@ -77,7 +62,7 @@ export default {
             return new Response('Unauthorized', { status: 401 });
         }
         try {
-            return await ctx.exports.Desktop.getByName('test').fetch(request);
+            return await ctx.exports.Desktop.getByName(request.headers.get('X-Test-Session')).fetch(request);
         } catch (error) {
             return new Response(error.stack, { status: 500 });
         }
